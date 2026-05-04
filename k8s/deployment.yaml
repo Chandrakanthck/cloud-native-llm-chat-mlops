@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemini-chat-deployment
+  labels:
+    app: gemini-chat-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gemini-chat-api
+  template:
+    metadata:
+      labels:
+        app: gemini-chat-api
+    spec:
+      containers:
+        - name: gemini-chat-container
+          image: your-dockerhub-username/gemini-chat-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gemini-api-secret
+                  key: GEMINI_API_KEY
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20

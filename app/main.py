@@ -38,3 +38,8 @@ async def real_chat(request: ChatRequest):
     except Exception as e:
         # Surface errors nicely to the client
         raise HTTPException(status_code=500, detail=str(e))
+
+#To check health status of the chat
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
