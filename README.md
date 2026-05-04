@@ -1,116 +1,288 @@
-\# Cloud-Native LLM Chat Microservice (FastAPI + Gemini)
+# Cloud-Native LLM Chat Microservice (FastAPI + Gemini + AWS EKS)
 
+A cloud‑ready AI chat microservice that exposes a `/chat` REST API using **FastAPI**, integrates with the **Google Gemini LLM API**, and is prepared for production deployment on **AWS EKS** using **Docker**, **Kubernetes**, and **Terraform**.
 
+This project is designed to showcase **DevOps + AI (MLOps)** skills for fresher / junior roles.
 
-A simple AI chat microservice that exposes a `/chat` REST endpoint using FastAPI and integrates with Google's Gemini API to generate responses from user prompts.
+---
 
+## Architecture Overview
 
+- **Application layer**
+  - Python **FastAPI** app with:
+    - `POST /chat` – sends the user’s `message` to Gemini and returns the AI reply.
+    - `GET /health` – simple health check used by Kubernetes probes.
+  - Secrets handled via environment variables / `.env` using `python-dotenv`.
 
-\## Features
+- **Containerization**
+  - `Dockerfile` builds a lightweight image running FastAPI with Uvicorn on port `8000`.
 
+- **Kubernetes**
+  - `k8s/deployment.yaml` – `Deployment` with:
+    - 2 replicas
+    - container port `8000`
+    - readiness & liveness probes on `/health`
+  - `k8s/service.yaml` – `LoadBalancer` `Service` exposing port `80` → pod port `8000`.
 
+- **Infrastructure as Code (Terraform)**
+  - `infra/` folder:
+    - Provisions a **VPC** (public + private subnets, NAT Gateway).
+    - Provisions an **EKS cluster** using official Terraform AWS modules.
+    - Tags subnets correctly for Kubernetes load balancers.
 
-\- `POST /chat` endpoint that accepts a JSON body with a `message` field and returns an AI-generated `reply`.
+- **Target Cloud Platform**
+  - **AWS**: ECR (for container images) + EKS (for running the cluster).
 
-\- `GET /health` endpoint for basic health checks (used by load balancers / Kubernetes probes).
+---
 
-\- Environment-based configuration with `.env` and `GEMINI\_API\_KEY`.
+## Tech Stack
 
-\- (Planned) Containerization with Docker and deployment manifests for Kubernetes/EKS.
+- **Languages & Frameworks**
+  - Python, FastAPI, Pydantic, Uvicorn
 
+- **AI / LLM**
+  - Google Gemini API (via `google-genai` SDK)
 
+- **DevOps & Cloud**
+  - Docker (containerization)
+  - Kubernetes (EKS, Deployments, Services, probes)
+  - Terraform (VPC + EKS provisioning)
+  - AWS: VPC, Subnets, NAT Gateway, ECR, EKS
 
-\## Tech Stack
+- **Config & Secrets**
+  - `.env` + `python-dotenv` for `GEMINI_API_KEY`
 
+---
 
+## Project Structure
 
-\- Python, FastAPI, Uvicorn
+```text
+cloud-native-llm-chat-mlops/
+├── app/
+│   ├── main.py           # FastAPI app (/chat, /health, Gemini integration)
+│   └── __init__.py
+├── k8s/
+│   ├── deployment.yaml   # Kubernetes Deployment (replicas, probes, containerPort)
+│   └── service.yaml      # Kubernetes Service (type LoadBalancer, port 80 -> 8000)
+├── infra/
+│   ├── main.tf           # Terraform: AWS provider, VPC + EKS modules
+│   ├── variables.tf      # Terraform input variables (region, CIDRs, tags)
+│   └── outputs.tf        # Terraform outputs (cluster name, endpoint, subnets)
+├── Dockerfile            # FastAPI container image
+├── requirements.txt      # Python dependencies
+├── .env                  # Local env file (NOT committed) – holds GEMINI_API_KEY
+├── .gitignore
+└── README.md
+```
 
-\- Google Gemini API (`google-genai`)
+---
 
-\- python-dotenv for environment variables
+## 1. Running the API locally (no Docker)
 
-\- (Planned) Docker, Kubernetes, AWS EKS, Terraform
+### Prerequisites
 
+- Python 3.10+  
+- Google Gemini API key (from [Google AI Studio](https://aistudio.google.com))
 
+### Steps
 
-\## Running Locally
+1. **Clone the repo**
 
+   ```bash
+   git clone https://github.com/Chandrakanthck/cloud-native-llm-chat-mlops.git
+   cd cloud-native-llm-chat-mlops
+   ```
 
+2. **Create `.env` file**
 
-1\. Clone the repository
+   In the project root:
 
+   ```bash
+   echo "GEMINI_API_KEY=your_real_key_here" > .env
+   ```
 
+3. **Install dependencies**
 
-2\. Create a `.env` file in the project root:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
+4. **Run the FastAPI app**
 
+   ```bash
+   python -m uvicorn app.main:app --reload
+   ```
 
-&#x20;  ```bash
+5. **Test in browser**
 
-&#x20;  GEMINI\_API\_KEY=your\_real\_key\_here
+   - Open: `http://127.0.0.1:8000/docs`
+   - Use `POST /chat` with a JSON body, for example:
 
-&#x20;  ```
+     ```json
+     {
+       "message": "Explain Kubernetes in simple words."
+     }
+     ```
 
+   - You should receive an AI-generated `"reply"` from Gemini.
+   - Check `GET /health` to see `{ "status": "ok" }`.
 
+---
 
-3\. Install dependencies:
+## 2. Docker (containerization)
 
+> Note: Docker build/run can be executed on a machine with Docker installed (local or cloud VM).
 
+### Build image
 
-&#x20;  ```bash
+```bash
+docker build -t gemini-chat-api:latest .
+```
 
-&#x20;  pip install -r requirements.txt
+### Run container
 
-&#x20;  ```
+```bash
+docker run -p 8000:8000 --env-file .env gemini-chat-api:latest
+```
 
+Then:
 
+- Visit `http://127.0.0.1:8000/docs` → test `/chat` and `/health` as before.
 
-4\. Start the API:
+---
 
+## 3. Kubernetes manifests (EKS-ready)
 
+The `k8s/` directory contains manifests that can be applied to any Kubernetes cluster (Minikube, kind, EKS, etc.) once an image is available in a registry (e.g., ECR).
 
-&#x20;  ```bash
+### Requirements
 
-&#x20;  python -m uvicorn app.main:app --reload
+- A built image pushed to a registry, e.g.:
 
-&#x20;  ```
+  ```text
+  <aws-account-id>.dkr.ecr.<region>.amazonaws.com/gemini-chat-api:latest
+  ```
 
+- `kubectl` configured to talk to your cluster.
 
+### Update image in `deployment.yaml`
 
-5\. Open the docs at:
+Set the correct image:
 
+```yaml
+containers:
+  - name: gemini-chat-container
+    image: <aws-account-id>.dkr.ecr.<region>.amazonaws.com/gemini-chat-api:latest
+    # ...
+```
 
+### Apply manifests
 
-&#x20;  - `http://127.0.0.1:8000/docs`
+```bash
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+```
 
+- Check resources:
 
+  ```bash
+  kubectl get pods
+  kubectl get svc
+  ```
 
-&#x20;  Use the `/chat` endpoint with a JSON body like:
+- When `Service` type `LoadBalancer` gets an external IP / hostname, test:
 
+  - `http://<EXTERNAL-ADDRESS>/health`  
+  - `http://<EXTERNAL-ADDRESS>/docs`
 
+---
 
-&#x20;  ```json
+## 4. Terraform – AWS VPC + EKS
 
-&#x20;  {
+The `infra/` folder holds **Infrastructure as Code** for a minimal EKS cluster using official Terraform AWS modules.
 
-&#x20;    "message": "Explain Kubernetes in simple words"
+> Recommended to run from **AWS Cloud9** or a small EC2 dev instance with Terraform and AWS CLI installed.
 
-&#x20;  }
+### Prerequisites
 
-&#x20;  ```
+- Terraform 1.5+  
+- AWS CLI configured (`aws configure`)  
+- Sufficient IAM permissions for VPC + EKS + IAM + EC2
 
+### Initialize and review
 
+```bash
+cd infra
+terraform init
+terraform plan
+```
 
-\## Kubernetes Manifests
+### Apply (creates VPC + EKS cluster)
 
+```bash
+terraform apply
+```
 
+After creation, outputs will include:
 
-\- `k8s/deployment.yaml` defines a `Deployment` with readiness and liveness probes calling `/health` on port 8000.
+- `eks_cluster_name`  
+- `eks_cluster_endpoint`  
+- `vpc_id`, `private_subnets`, `public_subnets`
 
-\- `k8s/service.yaml` defines a `LoadBalancer` `Service` that exposes the app on port 80 and forwards to 8000.
+### Connect `kubectl` to EKS
 
+Once the cluster exists:
 
+```bash
+aws eks update-kubeconfig \
+  --region <your-region> \
+  --name gemini-chat-eks
+```
 
-These are ready to be applied to a cluster (e.g., EKS) once the Docker image is built and published.
+Now:
 
+```bash
+kubectl get nodes
+```
+
+should show your EKS worker nodes. Then apply the `k8s/` manifests as in section 3.
+
+---
+
+## 5. What this project demonstrates (for recruiters / interviewers)
+
+This project is designed to prove the following skills:
+
+- **AI Integration**
+  - Calling a real LLM (Google Gemini) from a backend microservice.
+  - Handling prompts, responses, and error handling in Python.
+
+- **Backend Engineering**
+  - FastAPI application design with typed request models (`ChatRequest`).
+  - REST endpoints (`/chat`, `/health`) and OpenAPI docs (`/docs`).
+
+- **DevOps / MLOps Fundamentals**
+  - Containerizing the service with Docker for consistent deployment.
+  - Writing Kubernetes manifests:
+    - Deployments with replicas and probes.
+    - Services (LoadBalancer) mapping port 80 → 8000.
+
+- **Infrastructure as Code / Cloud**
+  - Using Terraform to define AWS VPC networking (CIDRs, subnets, NAT).
+  - Using Terraform to create an EKS cluster via well-known AWS modules.
+  - Preparing the app to run as a managed Kubernetes workload on AWS.
+
+---
+
+## Future Improvements
+
+- Add CI/CD (GitHub Actions or Jenkins) to build & push images to ECR on each commit.
+- Add Prometheus metrics and a Grafana dashboard for observability.
+- Add authentication (e.g., API key or JWT) around `/chat`.
+- Add logging and request tracing for production debugging.
+
+---
+
+## License
+
+This project is for learning and portfolio purposes. Feel free to explore the code and adapt it for your own educational use.
